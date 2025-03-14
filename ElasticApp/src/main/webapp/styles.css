@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Faustina:ital,wght@0,300..800;1,300..800&display=swap');
+
+body {
+    font-family: "Faustina", serif;
+  font-optical-sizing: auto;
+}
+
+h1 {
+    color: #000000;
+}
+
+
+body, html {
+    height: 100%;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: "Faustina", serif;
+    background: #696969;
+}
+
+.container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+
+.box {
+    background: white;
+    padding: 30px 40px;
+    border-radius: 8px;
+    border: 2px solid black;
+    text-align: center;
+    width: 450px;
+}
+
+
+.box h1 {
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 20px;
+}
+
+textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid black;
+    border-radius: 4px;
+    font-size: 16px;
+    resize: none;
+    outline: none;
+}
+
+
+input[type="submit"] {
+    padding: 10px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    background: green;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: 0.3s ease-in-out;
+}
+
+input[type="submit"]:hover {
+    background: darkgreen;
+}
+
+
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+
+h1 {
+    margin-bottom: 20px;
+}
+
+pre {
+    width: 80%;
+    max-height: 500px;
+    overflow: auto;
+    padding: 15px;
+    border: 2px solid black;
+    background: #f4f4f4;
+    border-radius: 5px;
+    white-space: pre-wrap; 
+    word-wrap: break-word;
+}
+
+a {
+    margin-top: 20px;
+    display: inline-block;
+    padding: 8px 15px;
+    border: 2px solid black;
+    text-decoration: none;
+    font-weight: bold;
+    color: black;
+    border-radius: 5px;
+}
+
+a:hover {
+    background: black;
+    color: white;
+}
+
+table {
+    width: 90%;
+    max-width: 1200px;
+    border-collapse: collapse;
+    margin: 20px auto; 
+    font-size: 18px; 
+}
+
+th, td {
+    padding: 12px 20px;
+    border: 2px solid black;
+    text-align: center; /
+}
+
+th {
+    background: #333; 
+    color: white;
+    font-size: 20px;
+}
+
+.table-container {
+    padding: 20px;
+}

@@ -12,15 +12,16 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpHead;
-import org.elasticsearch.client.RestClient;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.Collections;
 
+
+
 public class ElasticsearchClient {
+	private static ElasticsearchClient instance = null;
     private RestClient client;
 
 
@@ -28,6 +29,68 @@ public class ElasticsearchClient {
         this.client = RestClient.builder(
                 new HttpHost("localhost", 9200, "http")
         ).build();
+        
+        // Add shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down Elasticsearch client...");
+            close(); // Ensure client is closed properly
+        }));
+    }
+
+    
+    public static ElasticsearchClient getInstance() {
+        if (instance == null) {
+            synchronized (ElasticsearchClient.class) {
+                if (instance == null) {
+                    instance = new ElasticsearchClient();
+                }
+            }
+        }
+        return instance;
+    }
+    
+  
+
+
+
+    
+    public String groupByOperation(String index,JSONObject query) throws Exception{
+    	try {
+    		if (query==null) {
+    			throw new IOException("Parsed Query is null");
+    		}
+    		if (index == "default_index") {
+    			throw new IOException("NO table name is Parsed");
+    		}
+    	
+
+    	
+    		String queryString = query.toString();
+    	
+    		System.out.println(queryString);
+    		HttpEntity entity = new NStringEntity(queryString, ContentType.APPLICATION_JSON);
+    		
+
+    		Response response = client.performRequest(
+    				"GET",
+    				"/" + index + "/_search", 
+    				Collections.emptyMap(), 
+    				entity 
+    				);
+        
+    		
+    		BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
+    		StringBuilder result = new StringBuilder();
+    		String line;
+    		while ((line = reader.readLine()) != null) {
+    			result.append(line);
+    		}
+    		
+    		return result.toString();
+        
+    		} catch (Exception e) {
+    			throw new IOException("Failed GroupBy operation" + e.getMessage(), e);
+    		}
     }
     
     public String insertIntoIndex(JSONObject fields) throws IOException {
@@ -192,40 +255,60 @@ public class ElasticsearchClient {
     //select operations
     public String selectOperation(JSONObject selectObj) throws IOException {
         String index = selectObj.getString("table"); 
-        System.out.println(index);
-        JSONObject queryBody = selectObj.getJSONObject("query"); 
-        queryBody.put("size", 10000);
-
+        
+        System.out.println("Hi "+ index);
+        JSONObject queryBody = selectObj.getJSONObject("body"); 
+        
+        if (!queryBody.has("aggs")) {
+            queryBody.put("size", 10000);
+        }else {
+        	queryBody.put("size", 0);
+        }
 
 
         System.out.println(queryBody);
 
         HttpEntity entity = new NStringEntity(queryBody.toString(), ContentType.APPLICATION_JSON);
 
-
+        
         Response response = client.performRequest(
         		"GET", "/" + index + "/_search", 
             Collections.emptyMap(),
             entity
         );
 
-
+        
         BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
         StringBuilder result = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {
             result.append(line);
         }
-        System.out.println(result);
+        System.out.println(result.toString());
         return result.toString();
+        
     }
     
 
 
 
-    public void close() throws IOException {
-        if (client != null) {
-            client.close();
+    public void close() {
+        try {
+           
+            try {
+                Thread.sleep(4000L); // Wait for 2 seconds
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.out.println("Shutdown delay interrupted.");
+            }
+            
+            if (client != null) {
+                client.close();
+                System.out.println("Elasticsearch client closed successfully.");
+            }
+        } catch (IOException e) {
+            System.err.println("Error closing Elasticsearch client: " + e.getMessage());
         }
     }
+
 }

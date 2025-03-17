@@ -2,6 +2,7 @@ package com.elastic;
 
 
 
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.json.JSONArray;
@@ -163,7 +164,7 @@ public class QueryProcessor {
 	            if (query.toLowerCase().trim().startsWith("insert into")) {
 	                JSONObject values = extractInsertQueryDetails(query);
 	                if (values == null || values.has("error")) {
-	                    result.append("Invalid INSERT query format.");
+	                    result.append("Invalid INSERT query format."+values);
 	                } else {
 	                    String index = values.getString("table");
 
@@ -229,19 +230,34 @@ public class QueryProcessor {
 
 	            // SELECT Query Processing
 	            else if (query.toLowerCase().trim().startsWith("select ")) { 
-	            	if (query.toLowerCase().contains("group by")){
-	            		result.append(GroupByFunc.parseAggregationQuery(query));
-	            	}
-	                JSONObject selectObj = SelectOperation.parseSelectQuery(query);
-	                String response = esClient.selectOperation(selectObj);
-	                String table = TableClass.formatAsHtmlTable(response);
-	                result.append(table);
+	                if (query.toLowerCase().contains("group by")) {
+	                    JSONObject parsedQuery = GroupByFunc.parseAggregationQuery(query);
+	                   
+	                    String index = parsedQuery.getString("table");
+	                    System.out.println(index);
+	                    parsedQuery.remove("table");
+	                    System.out.println(parsedQuery);
+	                    
+	                    String response = esClient.groupByOperation(index, parsedQuery);
+	                   	String table = TableClass.formatAsHtmlTable(response);
+	                    result.append(table);
+	                    
 	                
+	                } else {
+	                    JSONObject selectObj = SelectOperation.parseSelectQuery(query);
+	                    System.out.println(selectObj);
+	                    String response = esClient.selectOperation(selectObj);
+	                    
+	                    String table = TableClass.formatAsHtmlTable(response);
+	                    result.append(table);
+	                  
+	                }
 	            }
+
 	        }catch(Exception e){
 	        	e.printStackTrace();
 	        }
-	        return result.toString();
+	      return result.toString();
 	    }
 }
 

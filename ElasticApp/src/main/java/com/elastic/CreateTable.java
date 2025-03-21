@@ -10,7 +10,7 @@ public class CreateTable {
         query = query.toLowerCase().trim();
 
         if (query.startsWith("create table")) {
-            // Extract table name (fixed regex)
+ 
             Pattern pattern = Pattern.compile("create table\\s+([`'\\\"]?\\w+[`'\\\"]?)", Pattern.CASE_INSENSITIVE);
             Matcher matcher = pattern.matcher(query);
             String tableName = matcher.find() ? matcher.group(1) : null;
@@ -32,30 +32,14 @@ public class CreateTable {
                     String fieldName = parts[0];
                     String fieldType = parts[1].replaceAll("\\(\\d+\\)", ""); 
 
-                    String esType;
-                    switch (fieldType.toLowerCase()) {
-                        case "varchar":
-                        case "text":
-                            esType = "text";
-                            break;
-                        case "int":
-                            esType = "integer";
-                            break;
-                        case "date":
-                            esType = "date";
-                            break;
-                        case "boolean":
-                            esType = "boolean";
-                            break;
-                        default:
-                            esType = "text"; 
-                    }
+                    String esType = convertToElasticType(fieldType);
+                    
+                
 
                     properties.put(fieldName, new JSONObject().put("type", esType));
                 }
             }
-
-            // Elasticsearch type name
+          
             String typeName = "doc";
 
             JSONObject mappings = new JSONObject();
@@ -69,7 +53,33 @@ public class CreateTable {
         }
         return null;
     }
-	
+	public static String convertToElasticType(String sqlType) {
+        sqlType = sqlType.toLowerCase();
+        switch (sqlType) {
+            case "int":
+            case "integer":
+            case "bigint":
+            case "smallint":
+                return "long";  
+            case "decimal":
+            case "numeric":
+            case "double":
+            case "float":
+                return "double"; 
+            case "char":
+            case "varchar":
+            case "text":
+                return "text";  
+            case "date":
+            case "datetime":
+            case "timestamp":
+                return "date";  
+            case "boolean":
+                return "boolean";  
+            default:
+                return "keyword"; 
+        }
+    }
 
 
 }

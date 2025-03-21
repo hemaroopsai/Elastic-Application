@@ -11,8 +11,9 @@ public class TableClass {
 	    StringBuilder htmlTable = new StringBuilder();
 
 	    try {
+    		
 	        JSONObject jsonObj = new JSONObject(jsonResponse);
-
+	  
 	      
 	        if (jsonObj.has("error")) {
 	            return formatErrorMessage(jsonObj);
@@ -78,7 +79,12 @@ public class TableClass {
 	        }   
 	    
 	        if (!aggregations.isEmpty()) {
-	            htmlTable.append(formatAggregationsAsHtmlTable(aggregations, fieldNames));
+	           if(formatAggregationsAsHtmlTable(aggregations, fieldNames).contains("Error")){
+	            	htmlTable.append(formatErrorMessage(jsonObj));
+	            }
+	           else {
+	        	   htmlTable.append(formatAggregationsAsHtmlTable(aggregations, fieldNames));
+	           }
 	        }
 
 	 
@@ -91,6 +97,9 @@ public class TableClass {
 
 	    return htmlTable.toString();
 	}
+	
+
+
 	
 	private static String formatErrorMessage(JSONObject jsonObj) {
 	    StringBuilder errorMessage = new StringBuilder();
@@ -124,6 +133,7 @@ public class TableClass {
 
             if (aggObject.has("buckets")) {
                 JSONArray buckets = aggObject.getJSONArray("buckets");
+                
                 for (int i = 0; i < buckets.length(); i++) {
                     JSONObject bucket = buckets.getJSONObject(i);
                     fieldNames.add(aggKey);
@@ -148,7 +158,9 @@ public class TableClass {
 
             if (aggObject.has("buckets")) {
                 JSONArray buckets = aggObject.getJSONArray("buckets");
-
+                if (buckets.length()<=0) {
+                	return "<h3>Error no data for given fieldname in group by. <h3>";
+                }
                 for (int i = 0; i < buckets.length(); i++) {
                     JSONObject bucket = buckets.getJSONObject(i);
                     String key = bucket.optString("key", "N/A");

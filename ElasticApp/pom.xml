@@ -30,11 +30,6 @@
       <artifactId>json</artifactId>
       <version>20210307</version>
     </dependency>
-    <dependency>
-    	<groupId>Dev</groupId>
-    	<artifactId>RestDemo</artifactId>
-    	<version>0.0.1-SNAPSHOT</version>
-    </dependency>
   </dependencies>
 
   <build>

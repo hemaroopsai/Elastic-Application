@@ -10,24 +10,39 @@ public class GroupByFunc {
     public static JSONObject parseAggregationQuery(String query) {
         JSONObject esQuery = new JSONObject();
 
-       
+       System.out.println(query);
         Pattern pattern = Pattern.compile(
-            "SELECT\\s+(\\*|.*?)\\s+FROM\\s+(\\w+)(?:\\s+WHERE\\s+(.*?))?(?:\\s+GROUP BY\\s+(.*?))?(?:\\s+ORDER BY\\s+(.*?))?;?$",
-      
-            Pattern.CASE_INSENSITIVE
-        );
+//        		"SELECT\\s+(.+?)\\s+FROM\\s+(\\w+)" +
+//        	               "(?:\\s+WHERE\\s+((?:(?!\\bGROUP\\s+BY\\b|\\bORDER\\s+BY\\b|\\bLIMIT\\b).)*))?" +
+//        	               "(?:\\s+GROUP\\s+BY\\s+((?:(?!\\bORDER\\s+BY\\b|\\bLIMIT\\b).)*))?" +
+//        	               "(?:\\s+ORDER\\s+BY\\s+((?:(?!\\bLIMIT\\b).)*))?" +
+//        	               "(?:\\s+LIMIT\\s+(\\d+))?",
+        		
+        			    "SELECT\\s+(.+?)\\s+FROM\\s+(\\w+)" +
+        			    "(?:\\s+WHERE\\s+((?:(?!\\s+GROUP\\s+BY|\\s+ORDER\\s+BY|\\s+LIMIT).)+))?" +
+        			    "(?:\\s+GROUP\\s+BY\\s+((?:(?!\\s+ORDER\\s+BY|\\s+LIMIT).)+))?" +
+        			    "(?:\\s+ORDER\\s+BY\\s+((?:(?!\\s+LIMIT).)+))?" +
+        			    "(?:\\s+LIMIT\\s+(\\d+))?" +
+        			    "\\s*;?",
+                Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+            );
         Matcher matcher = pattern.matcher(query);
 
         if (matcher.find()) {
             String fieldsPart = matcher.group(1).trim();
+            System.out.println(fieldsPart);
             String table = matcher.group(2).trim(); // Index name
+            
             String wherePart = matcher.group(3) != null ? matcher.group(3).trim() : null; // WHERE clause
+            System.out.println(wherePart);
             String groupByPart = matcher.group(4) != null ? matcher.group(4).trim() : null; // GROUP BY clause
+            System.out.println(groupByPart);
             String orderByPart = matcher.group(5) != null ? matcher.group(5).trim() : null; // ORDER BY clause
-
+            System.out.println(orderByPart);
+            String limitPart = matcher.group(6) != null ? matcher.group(6).trim() : null;
+            System.out.println(limitPart);
+            
             esQuery.put("table", table);
-            esQuery.put("size", 0); 
-
             if (wherePart != null) {
                 JSONObject whereClauseQuery = SelectOperation.parseWhereClause(wherePart);
                 esQuery.put("query", whereClauseQuery);
@@ -75,6 +90,21 @@ public class GroupByFunc {
 
                         String aggName = (alias != null) ? alias : avgField + "_avg";
                         aggregations.put(aggName, avgAgg);
+                        
+                    } else if (field.toLowerCase().startsWith("min(")) {
+                        String minField = field.replaceAll("(?i)min\\(|\\)", "").trim();
+                        JSONObject minAgg = new JSONObject();
+                        minAgg.put("min", new JSONObject().put("field", minField));
+                        String aggName = (alias != null) ? alias : minField + "_min";
+                        aggregations.put(aggName, minAgg);
+
+                    } else if (field.toLowerCase().startsWith("max(")) {
+                        String maxField = field.replaceAll("(?i)max\\(|\\)", "").trim();
+                        JSONObject maxAgg = new JSONObject();
+                        maxAgg.put("max", new JSONObject().put("field", maxField));
+                        String aggName = (alias != null) ? alias : maxField + "_max";
+                        aggregations.put(aggName, maxAgg);
+
 
                     } else {
                         sourceFields.put(field);
@@ -90,69 +120,60 @@ public class GroupByFunc {
 
             // Handle GROUP BY clause
             if (groupByPart != null) {
-                String[] groupByFields = groupByPart.split("\\s*,\\s*");
-                JSONObject nestedAgg = aggregations;
-                JSONObject parentGroupBy = new JSONObject();
+            	
+                esQuery.put("size", 0);
+                
 
-                for (int i = groupByFields.length - 1; i >= 0; i--) {
-                    String groupByField = groupByFields[i].trim().replace(";", "");
-
-                    JSONObject groupByAgg = new JSONObject();
-                    JSONObject terms = new JSONObject();
-                    terms.put("field", groupByField);
-                    terms.put("size", 100);
-
-               
-                    if (orderByPart != null) {
-                        JSONObject sortOrder = parseOrderByClause(orderByPart);
-                        terms.put("order", sortOrder);
-                    }
-
-
-                    groupByAgg.put("terms", terms);
-
-                    if (!nestedAgg.isEmpty()) {
-                        groupByAgg.put("aggs", nestedAgg);
-                    }
-
-                    parentGroupBy = new JSONObject();
-                    parentGroupBy.put(groupByField + "_group", groupByAgg);
-                    nestedAgg = parentGroupBy;
+                JSONObject groupAgg = new JSONObject();
+                JSONObject terms = new JSONObject();
+                terms.put("field", groupByPart);
+                if (orderByPart != null) {
+                	JSONObject sortObject = parseOrderClause(orderByPart);
+                    terms.put("order", sortObject);
+                }
+ 
+                if (limitPart != null) {
+                    terms.put("size", Integer.parseInt(limitPart));
+                } else {
+                    terms.put("size", 10000);
+                }
+                groupAgg.put("terms", terms);
+                
+          
+                if (aggregations.length() > 0) {
+                    groupAgg.put("aggs", aggregations);
                 }
 
-                esQuery.put("aggs", parentGroupBy);
-            } else if (!aggregations.isEmpty()) {
-                esQuery.put("aggs", aggregations);
+                JSONObject groupByAggs = new JSONObject();
+                groupByAggs.put("group_by_" + groupByPart, groupAgg);
+          
+                esQuery.put("aggs", groupByAggs);
+            }
+        }
+         return esQuery;
+     }
 
-                // If there's no GROUP BY, place ORDER BY at root level
-                if (orderByPart != null) {
-                    JSONObject sortArray = parseOrderByClause(orderByPart);
-                    esQuery.put("sort", sortArray);
+    public static JSONObject parseOrderClause(String orderByPart) {
+        JSONObject orderObject = new JSONObject();
+        
+        if (orderByPart != null && !orderByPart.trim().isEmpty()) {
+            String[] parts = orderByPart.trim().split("\\s+");
+            if (parts.length > 0) {
+                String field = parts[0].trim();
+                String order = (parts.length > 1) ? parts[1].trim().toLowerCase() : "asc";
+                
+                
+                if (field.equalsIgnoreCase("count") || field.equalsIgnoreCase("count(*)")) {
+                    orderObject.put("_count", order);
+                } else {
+                 
+                    orderObject.put("_term", order);
                 }
             }
         }
-
-        return esQuery;
-    }
-
-    public static JSONObject parseOrderByClause(String orderByPart) {
-        JSONObject orderObject = new JSONObject();
-
-        String[] parts = orderByPart.split("\\s+");
-        String field = parts[0].trim();
-        String order = parts.length > 1 ? parts[1].trim().toLowerCase() : "asc"; 
-
-    
-        if (field.equalsIgnoreCase("desc") || field.equalsIgnoreCase("asc")) {
-            orderObject.put("_term", order);
-        } else if (field.equalsIgnoreCase("count")) {
-            orderObject.put("_count", order);
-        } else {
-
-            orderObject.put(field, new JSONObject().put("order", order));
-        }
-
         return orderObject;
     }
+
+
 
 }

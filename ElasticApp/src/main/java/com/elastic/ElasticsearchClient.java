@@ -30,46 +30,82 @@ public class ElasticsearchClient {
                 new HttpHost("localhost", 9200, "http")
         ).build();
         
-        // Add shutdown hook
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.out.println("Shutting down Elasticsearch client...");
-            close(); // Ensure client is closed properly
+            close(); 
         }));
     }
 
     
-    public static ElasticsearchClient getInstance() {
+    public static synchronized ElasticsearchClient getInstance() {
         if (instance == null) {
-            synchronized (ElasticsearchClient.class) {
-                if (instance == null) {
-                    instance = new ElasticsearchClient();
-                }
-            }
+            instance = new ElasticsearchClient();
+        } else {
+            instance.close(); // Ensure old instance is closed
+            instance = new ElasticsearchClient();
         }
         return instance;
     }
     
+    //builder
+    private String processResponse(Response response) throws IOException {
+        BufferedReader reader = new BufferedReader(
+            new InputStreamReader(response.getEntity().getContent())
+        );
+        StringBuilder result = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            result.append(line);
+        }
+        
+        System.out.println("Raw Elasticsearch Response: " + result.toString());
+        System.out.println();
+        return result.toString();
+    }
+    
+    public String updateOperation(JSONObject parsedQuery) throws Exception{
+    	String index = parsedQuery.getString("index");
+    	parsedQuery.remove("index");
+    	System.out.println(parsedQuery);
+    	HttpEntity entity = new NStringEntity(parsedQuery.toString(), ContentType.APPLICATION_JSON);
+    	
+    	Response response = client.performRequest(
+				"POST",
+				index+"/_update_by_query",
+				Collections.emptyMap(),
+				entity
+			);
+
+    	return processResponse(response).toString();
+    }
+    
   
 
-
+    public String alterOperation(JSONObject parsedQuery) throws Exception{
+    	JSONObject mappings = parsedQuery.getJSONObject("mappings");
+    	String index = parsedQuery.getString("index");
+    	System.out.println(mappings);
+    	HttpEntity entity = new NStringEntity(mappings.toString(), ContentType.APPLICATION_JSON);
+    	
+    	Response response = client.performRequest(
+    				"PUT",
+    				"/"+index+"/_mappings"+"/"+"doc",
+    				Collections.emptyMap(),
+    				entity
+    			);
+    	return processResponse(response).toString();
+    	
+    }
 
     
     public String groupByOperation(String index,JSONObject query) throws Exception{
-    	try {
-    		if (query==null) {
-    			throw new IOException("Parsed Query is null");
-    		}
-    		if (index == "default_index") {
-    			throw new IOException("NO table name is Parsed");
-    		}
     	
-
-    	
+    try {
     		String queryString = query.toString();
     	
     		System.out.println(queryString);
     		HttpEntity entity = new NStringEntity(queryString, ContentType.APPLICATION_JSON);
-    		
 
     		Response response = client.performRequest(
     				"GET",
@@ -78,56 +114,52 @@ public class ElasticsearchClient {
     				entity 
     				);
         
+    		return processResponse(response).toString();
+    } catch(Exception e) {
+    	e.printStackTrace();
+    	return e.getMessage();
+    }
     		
-    		BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-    		StringBuilder result = new StringBuilder();
-    		String line;
-    		while ((line = reader.readLine()) != null) {
-    			result.append(line);
-    		}
-    		
-    		return result.toString();
-        
-    		} catch (Exception e) {
-    			throw new IOException("Failed GroupBy operation" + e.getMessage(), e);
-    		}
     }
     
     public String insertIntoIndex(JSONObject fields) throws IOException {
-        if (fields == null) {
-            throw new IOException("Fields object is null. Cannot insert.");
-        }
 
-        if (!fields.has("table")) {
-            throw new IOException("Fields object does not contain 'table' key.");
-        }
 
-        String index = fields.getString("table");
-        String type = "doc";
-        
-        
+        String index = fields.getString("table"); 
+        String endpoint = "/" + index + "/_bulk";
 
-        JSONArray fieldsArray = fields.getJSONArray("fields");
-        System.out.println(fieldsArray);
-        JSONObject esDoc = new JSONObject();
-        for (int i = 0; i < fieldsArray.length(); i++) {
-            JSONObject fieldObj = fieldsArray.getJSONObject(i);
-            esDoc.put(fieldObj.getString("field"), fieldObj.get("value"));
-        }
-        System.out.println(esDoc);
-        String endpoint = "/" + index + "/" + type + "/";
+        JSONArray fieldNames = fields.getJSONArray("fields"); // Column names
+        JSONArray valuesArray = fields.getJSONArray("values"); // Data values
         
-        try {
-            HttpEntity entity = new NStringEntity(esDoc.toString(), ContentType.APPLICATION_JSON);
-            Response response = client.performRequest("POST", endpoint, Collections.emptyMap(), entity);
-            
-            BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-            StringBuilder result = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
+        StringBuilder bulkData = new StringBuilder();
+
+        // Iterate through each row
+        for (int i = 0; i < valuesArray.length(); i++) {
+            JSONArray rowValues = valuesArray.getJSONArray(i);
+            JSONObject document = new JSONObject();
+
+            for (int j = 0; j < fieldNames.length(); j++) {
+                document.put(fieldNames.getString(j), rowValues.get(j));
             }
-            return result.toString();
+
+            // Append to bulk request
+            bulkData.append("{\"index\": { \"_index\": \"").append(index).append("\" , \"_type\":\"doc\"").append("}}\n");
+            bulkData.append(document.toString()).append("\n");
+        }
+
+        if (bulkData.length() == 0) {
+            throw new IOException("No valid documents to insert.");
+        }
+        	System.out.println(bulkData.toString());
+        try {
+            HttpEntity entity = new NStringEntity(bulkData.toString(), ContentType.APPLICATION_JSON);
+            Response response = client.performRequest(
+            		"POST", 
+            		endpoint, 
+            		Collections.emptyMap(), 
+            		entity);
+            
+            return processResponse(response).toString();
             
         } catch (Exception e) {
             throw new IOException("Failed to insert document: " + e.getMessage(), e);
@@ -136,41 +168,45 @@ public class ElasticsearchClient {
 
 
     
-    public String deleteByQuery(String index,  String fieldName, String fieldValue) throws IOException {
+    public String deleteByQuery(String index,  JSONObject query ) throws IOException {
         try {
         	String type ="doc";
             String endpoint = "/" + index + "/" + type + "/_delete_by_query";
-          
-      
-            JSONObject matchQuery = new JSONObject();
-            matchQuery.put(fieldName, fieldValue);
+            
+            HttpEntity entity = new NStringEntity(query.toString(), ContentType.APPLICATION_JSON);
+            Response response = client.performRequest(
+            		"POST", 
+            		endpoint, 
+            		Collections.emptyMap(),
+            		entity);
 
-            JSONObject query = new JSONObject();
-            query.put("match", matchQuery);
-
-            JSONObject requestBody = new JSONObject();
-            requestBody.put("query", query);
-
-            // Convert JSON object to string
-            String jsonBody = requestBody.toString();
-            System.out.println(index+","+fieldName+","+fieldValue);
-          
-            HttpEntity entity = new NStringEntity(jsonBody, ContentType.APPLICATION_JSON);
-            Response response = client.performRequest("POST", endpoint, Collections.emptyMap(), entity);
-
-            BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-            StringBuilder result = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
-            }
-
-            return result.toString();
+            return processResponse(response).toString();
         } catch (Exception e) {
             throw new IOException("Failed to delete documents by query: " + e.getMessage(), e);
         }
     }
+    
+    public String deleteByIndex(String index) {
+    	 try {
+    	    
+    	        String jsonQuery = "{ \"query\": { \"match_all\": {} } }";
+    	        String type ="doc";
+    	        String endpoint = "/" + index + "/" + type + "/_delete_by_query";
+    	        HttpEntity entity = new NStringEntity(jsonQuery, ContentType.APPLICATION_JSON);
+    	        Response response = client.performRequest(
+                		"POST", 
+                		endpoint, 
+                		Collections.emptyMap(),
+                		entity);
 
+                return processResponse(response).toString();
+
+    	    } catch (Exception e) {
+    	        e.printStackTrace();
+    	        return "Error deleting documents: " + e.getMessage();
+    	    }
+
+    }
 
 
     
@@ -187,14 +223,7 @@ public class ElasticsearchClient {
             );
 
          
-            BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-            StringBuilder result = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
-            }
-
-            return result.toString();
+            return processResponse(response).toString();
         } catch (Exception e) {
             throw new IOException("Failed to delete index: " + e.getMessage(), e);
         }
@@ -219,6 +248,7 @@ public class ElasticsearchClient {
 
 
 
+
     
     
     //create table
@@ -238,14 +268,8 @@ public class ElasticsearchClient {
             );
 
           
-            BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-            StringBuilder result = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
-            }
-
-            return result.toString();
+            return processResponse(response).toString();
+            
         } catch (Exception e) {
             throw new IOException("Failed to create index: " + e.getMessage(), e);
         }
@@ -254,19 +278,19 @@ public class ElasticsearchClient {
     //workon
     //select operations
     public String selectOperation(JSONObject selectObj) throws IOException {
+    	try {
         String index = selectObj.getString("table"); 
         
-        System.out.println("Hi "+ index);
+
         JSONObject queryBody = selectObj.getJSONObject("body"); 
-        
-        if (!queryBody.has("aggs")) {
+        if (queryBody.has("aggs")) {
+        	queryBody.put("size",0);
+        }
+   
+        if (!queryBody.has("aggs") && !queryBody.has("size")) {
             queryBody.put("size", 10000);
-        }else {
-        	queryBody.put("size", 0);
         }
 
-
-        System.out.println(queryBody);
 
         HttpEntity entity = new NStringEntity(queryBody.toString(), ContentType.APPLICATION_JSON);
 
@@ -278,37 +302,38 @@ public class ElasticsearchClient {
         );
 
         
-        BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-        StringBuilder result = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            result.append(line);
-        }
-        System.out.println(result.toString());
-        return result.toString();
-        
+        return processResponse(response).toString();
+    	}
+    	catch(Exception e) {
+    		e.printStackTrace();
+    		return e.getMessage();
+    	}
     }
-    
+    public String SchemaRepresentation() throws IOException {
+    	 HttpEntity entity = new NStringEntity("{}", ContentType.APPLICATION_JSON);
+
+
+         Response response = client.performRequest(
+             "GET", "_cat/indices?v",
+             Collections.emptyMap(), entity
+         );
+         return processResponse(response).toString();
+    }
 
 
 
     public void close() {
-        try {
-           
+        if (client != null) {
             try {
-                Thread.sleep(4000L); // Wait for 2 seconds
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                System.out.println("Shutdown delay interrupted.");
-            }
-            
-            if (client != null) {
                 client.close();
                 System.out.println("Elasticsearch client closed successfully.");
+            } catch (IOException e) {
+                System.err.println("Error closing Elasticsearch client: " + e.getMessage());
+            } finally {
+                client = null; 
             }
-        } catch (IOException e) {
-            System.err.println("Error closing Elasticsearch client: " + e.getMessage());
         }
     }
+
 
 }
